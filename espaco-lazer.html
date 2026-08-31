@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Espaço & Lazer — Painel administrativo</title>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.3/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  // Rede de segurança: se algo falhar antes do React renderizar, mostra o
+  // erro na tela em vez de deixar a página em branco sem explicação.
+  window.addEventListener("error", function (e) {
+    var root = document.getElementById("root");
+    if (root && !root.dataset.appRendered) {
+      root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;padding:20px;">' +
+        '<div style="background:#fff;border:1px solid #FCE7E5;border-radius:16px;padding:24px;max-width:480px;color:#C6382E;">' +
+        '<strong>Erro ao carregar o sistema</strong><br/><br/>' +
+        (e.message || "Erro desconhecido") +
+        '<br/><br/><span style="color:#5B6B67;font-size:13px;">Verifique sua conexão com a internet e recarregue a página. Se persistir, copie esta mensagem e envie para o suporte.</span>' +
+        '</div></div>';
+    }
+  });
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #F3F6F5; color: #0F2622; }
+  .font-display { font-family: 'Poppins', sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #C7D3D0; border-radius: 8px; }
+  input, select, textarea, button { font-family: inherit; }
+  input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(31,167,184,0.25); border-color: #1FA7B8 !important; }
+  button { cursor: pointer; border: none; }
+</style>
+</head>
+<body>
+<div id="root"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;color:#5B6B67;">Carregando Espaço &amp; Lazer…</div></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+/* ============================================================
+   CONFIGURAÇÃO DO SUPABASE
+   ============================================================ */
+const SUPABASE_URL = "https://dsozqvtcesexiepzgtui.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzb3pxdnRjZXNleGllcHpndHVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MDAzMDUsImV4cCI6MjEwMjQ3NjMwNX0.dUuSBdKezWg-OUR5ALZ8vVUQx9zZGkQNG_aXq2e-lDE";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* =========================================================================
+   ESPAÇO & LAZER — Sistema de Gestão de Reservas (multi-dispositivo)
+   ========================================================================= */
+
+const PALETA = {
+  bg: "#F3F6F5", surface: "#FFFFFF", ink: "#0F2622",
+  tealDark: "#0C2E2A", teal: "#124A43", tealSoft: "#1B6459",
+  coral: "#FF6A45", coralDark: "#E24E29", sky: "#1FA7B8",
+  amber: "#D68A00", amberBg: "#FFF3DC", green: "#187A4D", greenBg: "#E4F5EB",
+  red: "#C6382E", redBg: "#FCE7E5", slate: "#5B6B67", border: "#DFE7E4",
+  violet: "#7C5CBF", violetBg: "#EFE9FA",
+};
+
+const ICON = {
+  dashboard: "▦", reservas: "📅", config: "⚙", search: "🔍", plus: "＋", close: "✕",
+  piscina: "🌊", trash: "🗑", undo: "↩", ban: "⛔", check: "✔", clock: "🕐",
+  warn: "⚠", money: "💲", users: "👥", up: "📈", down: "📉", wallet: "💰",
+  rotate: "↺", chevronDown: "▾", chevronLeft: "‹", chevronRight: "›", list: "☰", calendar: "🗓",
+  party: "🎉", compare: "📊",
+};
+
+const WEEKDAY_KEYS = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
+const WEEKDAY_LABELS = { dom: "Domingo", seg: "Segunda-feira", ter: "Terça-feira", qua: "Quarta-feira", qui: "Quinta-feira", sex: "Sexta-feira", sab: "Sábado" };
+const WEEKDAY_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+const STATUS_STYLE = {
+  "Reservado": { bg: PALETA.violetBg, fg: PALETA.violet, i: ICON.clock },
+  "Pagamento parcial": { bg: PALETA.amberBg, fg: PALETA.amber, i: ICON.up },
+  "Pago": { bg: PALETA.greenBg, fg: PALETA.green, i: ICON.check },
+  "Cancelado": { bg: PALETA.redBg, fg: PALETA.red, i: ICON.ban },
+  "Devolução pendente": { bg: PALETA.redBg, fg: PALETA.coralDark, i: ICON.warn },
+  "Devolvido": { bg: "#EDEDED", fg: PALETA.slate, i: ICON.rotate },
+};
+
+function uid(p) { return (p || "id") + "_" + Math.random().toString(36).slice(2, 9); }
+function todayStr() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function nowISO() { return new Date().toISOString(); }
+function fmtBRL(v) { return (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
+function fmtDataBR(s) { if (!s) return "—"; const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; }
+function fmtDataHoraBR(iso) { try { const d = new Date(iso); return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); } catch { return iso; } }
+function parseDateLocal(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function weekdayKeyOf(s) { return WEEKDAY_KEYS[parseDateLocal(s).getDay()]; }
+function daysInMonth(y, m0) { return new Date(y, m0 + 1, 0).getDate(); }
+function pad(n) { return String(n).padStart(2, "0"); }
+function monthKeyFromDate(s) { const [y, m] = s.split("-"); return `${y}-${m}`; }
+function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+/* ---------------------- Motor de cálculo financeiro -------------------- */
+
+function precoPadraoParaData(dateStr, config) { return config.precos[weekdayKeyOf(dateStr)]; }
+
+// Todas as datas de um contrato: a data principal + eventuais datas
+// adicionais (mesmo cliente, mesmo contrato, dias seguidos ou não).
+function todasDatasDe(reserva) {
+  return [reserva.data, ...((reserva.datasExtras || []).map(d => d.data).filter(Boolean))];
+}
+
+function computeComponentes(reserva, config) {
+  const precoDeUmaData = (dataStr, override) =>
+    (override !== null && override !== undefined && override !== "") ? Number(override) : precoPadraoParaData(dataStr, config);
+
+  const locacaoPrincipal = precoDeUmaData(reserva.data, reserva.valorManual);
+  const extras = (reserva.datasExtras || []).filter(d => d.data);
+  const locacaoExtras = extras.reduce((s, d) => s + precoDeUmaData(d.data, d.valorManual), 0);
+  const locacao = locacaoPrincipal + locacaoExtras;
+  const detalhePorData = [
+    { data: reserva.data, valor: locacaoPrincipal },
+    ...extras.map(d => ({ data: d.data, valor: precoDeUmaData(d.data, d.valorManual) })),
+  ];
+
+  const piscina = reserva.piscina ? Number(reserva.valorPiscinaOverride ?? config.piscina) : 0;
+  const pulaPula = reserva.pulaPula ? Number(reserva.valorPulaPulaOverride ?? config.pulaPula) : 0;
+  const reajuste = Number(reserva.reajuste) || 0;
+  return {
+    locacao, locacaoPrincipal, locacaoExtras, qtdDatas: 1 + extras.length, detalhePorData,
+    piscina, pulaPula, reajuste, valorFinal: locacao + piscina + pulaPula + reajuste,
+  };
+}
+
+function computeFinanceiro(reserva, config) {
+  const componentes = computeComponentes(reserva, config);
+  const totalPago = (reserva.pagamentos || []).reduce((s, p) => s + Number(p.valor), 0);
+  const totalDevolvido = (reserva.devolucoes || []).reduce((s, d) => s + Number(d.valor), 0);
+  const totalPagoLiquido = totalPago - totalDevolvido;
+
+  if (reserva.status === "cancelado") {
+    const canc = (reserva.cancelamentos || [])[reserva.cancelamentos.length - 1];
+    const sinalRetido = canc ? canc.sinalRetido : reserva.sinalValor;
+    const totalPagoNoCancelamento = canc ? canc.totalPagoNoCancelamento : totalPago;
+    const valorADevolver = Math.max(0, totalPagoNoCancelamento - sinalRetido);
+    const restanteADevolver = Math.max(0, round2(valorADevolver - totalDevolvido));
+    let status = "Cancelado";
+    if (restanteADevolver > 0.004) status = "Devolução pendente";
+    else if (totalDevolvido > 0) status = "Devolvido";
+    return { ...componentes, totalPago, totalDevolvido, totalPagoLiquido, sinalRetido, valorADevolver, restanteADevolver, status, saldo: null };
+  }
+  const saldo = round2(componentes.valorFinal - totalPagoLiquido);
+  let status = "Reservado";
+  if (saldo <= 0.004) status = "Pago";
+  else if (totalPagoLiquido > reserva.sinalValor + 0.004) status = "Pagamento parcial";
+  return { ...componentes, totalPago, totalDevolvido, totalPagoLiquido, saldo, status };
+}
+
+// datasNovas: array com TODAS as datas do contrato que está sendo criado/editado
+function conflitoDeData(reservas, datasNovas, ignorarId) {
+  const alvo = new Set(datasNovas);
+  return reservas.find(r => r.status === "ativo" && r.id !== ignorarId && todasDatasDe(r).some(d => alvo.has(d))) || null;
+}
+
+// Soma de uma métrica (recebido líquido ou valor previsto) para um mês/ano
+// específico, considerando TODAS as reservas já carregadas — usado pela
+// tela de Comparativo, que precisa olhar qualquer mês/ano, não só o
+// selecionado na navegação principal.
+function getValorMes(reservasComFinanceiro, ano, mes0, metrica) {
+  const chave = `${ano}-${pad(mes0 + 1)}`;
+  if (metrica === "recebido") {
+    let total = 0;
+    reservasComFinanceiro.forEach(r => {
+      (r.pagamentos || []).forEach(p => { if (monthKeyFromDate(p.data) === chave) total += Number(p.valor); });
+      (r.devolucoes || []).forEach(d => { if (monthKeyFromDate(d.data) === chave) total -= Number(d.valor); });
+    });
+    return total;
+  }
+  // "previsto": soma do valor final das reservas ativas + sinal retido de canceladas nesse mês
+  const ativasDoMes = reservasComFinanceiro.filter(r => r.status === "ativo" && monthKeyFromDate(r.data) === chave);
+  const canceladasDoMes = reservasComFinanceiro.filter(r => r.status === "cancelado" && monthKeyFromDate(r.data) === chave);
+  return ativasDoMes.reduce((s, r) => s + r.fin.valorFinal, 0) + canceladasDoMes.reduce((s, r) => s + (r.fin.sinalRetido || 0), 0);
+}
+
+/* ---------------------------- Camada Supabase --------------------------- */
+
+function configRowToObj(row) {
+  return {
+    precos: { seg: Number(row.preco_seg), ter: Number(row.preco_ter), qua: Number(row.preco_qua), qui: Number(row.preco_qui), sex: Number(row.preco_sex), sab: Number(row.preco_sab), dom: Number(row.preco_dom) },
+    piscina: Number(row.piscina), pulaPula: Number(row.pula_pula), sinal: Number(row.sinal),
+  };
+}
+
+async function carregarTudo() {
+  const [{ data: cfgRows, error: e1 }, { data: resRows, error: e2 }, { data: pagRows, error: e3 },
+    { data: devRows, error: e4 }, { data: cancRows, error: e5 }, { data: histRows, error: e6 }] = await Promise.all([
+    sb.from("configuracoes_publica").select("*").eq("id", 1).single(),
+    sb.from("reservas").select("*"),
+    sb.from("pagamentos").select("*").order("data", { ascending: true }),
+    sb.from("devolucoes").select("*").order("data", { ascending: true }),
+    sb.from("cancelamentos").select("*").order("criado_em", { ascending: true }),
+    sb.from("historico").select("*").order("data", { ascending: true }),
+  ]);
+  const erro = e1 || e2 || e3 || e4 || e5 || e6;
+  if (erro) throw erro;
+
+  const config = configRowToObj(cfgRows);
+  const byReserva = (rows) => { const m = {}; (rows || []).forEach(r => { (m[r.reserva_id] = m[r.reserva_id] || []).push(r); }); return m; };
+  const pagPorReserva = byReserva(pagRows), devPorReserva = byReserva(devRows), cancPorReserva = byReserva(cancRows), histPorReserva = byReserva(histRows);
+
+  const reservas = (resRows || []).map(r => ({
+    id: r.id, nome: r.nome, data: r.data,
+    valorManual: r.valor_manual, piscina: r.piscina, valorPiscinaOverride: r.valor_piscina_override,
+    datasExtras: r.datas_extras || [],
+    pulaPula: r.pula_pula, valorPulaPulaOverride: r.valor_pula_pula_override,
+    obs: r.obs || "", reajuste: Number(r.reajuste) || 0, sinalValor: Number(r.sinal_valor),
+    status: r.status, reativado: r.reativado, criadoEm: r.criado_em,
+    pagamentos: (pagPorReserva[r.id] || []).map(p => ({ id: p.id, data: p.data, valor: Number(p.valor), tipo: p.tipo, obs: p.obs || "" })),
+    devolucoes: (devPorReserva[r.id] || []).map(d => ({ id: d.id, data: d.data, valor: Number(d.valor), obs: d.obs || "" })),
+    cancelamentos: (cancPorReserva[r.id] || []).map(c => ({ data: c.data, motivo: c.motivo || "", sinalRetido: Number(c.sinal_retido), totalPagoNoCancelamento: Number(c.total_pago_no_cancelamento) })),
+    historico: (histPorReserva[r.id] || []).map(h => ({ data: h.data, texto: h.texto })),
+  }));
+  return { config, reservas };
+}
+
+async function inserirHistorico(reservaId, texto) {
+  await sb.from("historico").insert({ reserva_id: reservaId, texto, data: nowISO() });
+}
+
+/* ================================ APP ==================================== */
+
+function App() {
+  const [desbloqueado, setDesbloqueado] = useState(sessionStorage.getItem("el_unlocked") === "true");
+  const [carregando, setCarregando] = useState(true);
+  const [erroCarregar, setErroCarregar] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [reservas, setReservas] = useState([]);
+  const [tela, setTela] = useState("dashboard");
+  const [ano, setAno] = useState(new Date().getFullYear());
+  const [mes, setMes] = useState(new Date().getMonth());
+  const [modo, setModo] = useState("lista");
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState("todos");
+  const [modalNovo, setModalNovo] = useState(false);
+  const [reservaAberta, setReservaAberta] = useState(null);
+  const [modalPagamento, setModalPagamento] = useState(null);
+  const [modalCancelar, setModalCancelar] = useState(null);
+  const [modalVigorar, setModalVigorar] = useState(null);
+  const [modalDevolucao, setModalDevolucao] = useState(null);
+  const [modalExcluir, setModalExcluir] = useState(null);
+  const [modalEditar, setModalEditar] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const recarregar = useCallback(async () => {
+    try {
+      const { config, reservas } = await carregarTudo();
+      setConfig(config); setReservas(reservas); setErroCarregar(null);
+    } catch (e) {
+      setErroCarregar(e.message || "Falha ao conectar ao banco de dados.");
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => { if (desbloqueado) recarregar(); }, [desbloqueado, recarregar]);
+
+  const showToast = useCallback((msg, tone) => {
+    setToast({ msg, tone: tone || "ok", id: uid() });
+    setTimeout(() => setToast(t => (t && t.msg === msg ? null : t)), 3200);
+  }, []);
+
+  // IMPORTANTE: hooks como useMemo precisam ser chamados sempre, na mesma
+  // ordem, em todo render — por isso ficam aqui em cima, antes de qualquer
+  // "return" condicional (tela de senha / carregando / erro). "config" e
+  // "reservas" podem estar vazios/null nesse momento; os cálculos abaixo
+  // já lidam bem com isso (arrays vazios, valores zerados).
+  const reservasComFinanceiro = useMemo(() => reservas.map(r => ({ ...r, fin: computeFinanceiro(r, config || DEFAULT_CONFIG) })), [reservas, config]);
+  const reservasDoMes = useMemo(() => {
+    const chave = `${ano}-${pad(mes + 1)}`;
+    return reservasComFinanceiro.filter(r => monthKeyFromDate(r.data) === chave).sort((a, b) => a.data.localeCompare(b.data));
+  }, [reservasComFinanceiro, ano, mes]);
+
+  const reservasFiltradas = useMemo(() => {
+    let lista = reservasDoMes;
+    const hoje = todayStr();
+    if (filtro === "pagos") lista = lista.filter(r => r.fin.status === "Pago");
+    else if (filtro === "parciais") lista = lista.filter(r => r.fin.status === "Pagamento parcial");
+    else if (filtro === "pendentes") lista = lista.filter(r => r.fin.status === "Reservado");
+    else if (filtro === "cancelados") lista = lista.filter(r => r.status === "cancelado");
+    else if (filtro === "devolucao") lista = lista.filter(r => r.fin.status === "Devolução pendente");
+    else if (filtro === "proximos") lista = lista.filter(r => r.status === "ativo" && r.data >= hoje);
+    else if (filtro === "reativados") lista = lista.filter(r => r.reativado);
+    if (busca.trim()) { const q = busca.trim().toLowerCase(); lista = lista.filter(r => r.nome.toLowerCase().includes(q) || r.data.includes(q) || fmtDataBR(r.data).includes(q)); }
+    return lista;
+  }, [reservasDoMes, filtro, busca]);
+
+  const resumoMes = useMemo(() => {
+    const ativas = reservasDoMes.filter(r => r.status === "ativo");
+    const canceladas = reservasDoMes.filter(r => r.status === "cancelado");
+    // "Total previsto" inclui o valor das reservas ativas + o sinal não
+    // reembolsável retido de eventos cancelados nesse mês (essa parte
+    // continua sendo receita garantida do mês, mesmo com o evento cancelado).
+    const totalPrevisto = ativas.reduce((s, r) => s + r.fin.valorFinal, 0) + canceladas.reduce((s, r) => s + (r.fin.sinalRetido || 0), 0);
+    const aReceber = ativas.reduce((s, r) => s + Math.max(0, r.fin.saldo), 0);
+    const quitadas = ativas.filter(r => r.fin.status === "Pago").length;
+    const pendentes = ativas.filter(r => r.fin.status !== "Pago").length;
+    const chave = `${ano}-${pad(mes + 1)}`;
+    let recebidoNoMes = 0;
+    reservasComFinanceiro.forEach(r => {
+      (r.pagamentos || []).forEach(p => { if (monthKeyFromDate(p.data) === chave) recebidoNoMes += Number(p.valor); });
+      (r.devolucoes || []).forEach(d => { if (monthKeyFromDate(d.data) === chave) recebidoNoMes -= Number(d.valor); });
+    });
+    return { totalPrevisto, aReceber, quitadas, pendentes, recebidoNoMes, numReservas: ativas.length };
+  }, [reservasDoMes, reservasComFinanceiro, ano, mes]);
+
+  const dashboardData = useMemo(() => {
+    const hoje = new Date(), y = hoje.getFullYear(), m = hoje.getMonth(), chave = `${y}-${pad(m + 1)}`;
+    const doMes = reservasComFinanceiro.filter(r => monthKeyFromDate(r.data) === chave);
+    const ativas = doMes.filter(r => r.status === "ativo");
+    const canceladasDoMes = doMes.filter(r => r.status === "cancelado");
+    const totalPrevisto = ativas.reduce((s, r) => s + r.fin.valorFinal, 0) + canceladasDoMes.reduce((s, r) => s + (r.fin.sinalRetido || 0), 0);
+    const aReceber = ativas.reduce((s, r) => s + Math.max(0, r.fin.saldo), 0);
+    const quitadas = ativas.filter(r => r.fin.status === "Pago").length;
+    const pendentesSaldo = ativas.filter(r => r.fin.status !== "Pago").length;
+    const canceladosNoMes = doMes.filter(r => r.status === "cancelado").length;
+    let recebidoNoMes = 0;
+    reservasComFinanceiro.forEach(r => {
+      (r.pagamentos || []).forEach(p => { if (monthKeyFromDate(p.data) === chave) recebidoNoMes += Number(p.valor); });
+      (r.devolucoes || []).forEach(d => { if (monthKeyFromDate(d.data) === chave) recebidoNoMes -= Number(d.valor); });
+    });
+    const aDevolverGlobal = reservasComFinanceiro.filter(r => r.status === "cancelado").reduce((s, r) => s + (r.fin.restanteADevolver || 0), 0);
+    const proximos = reservasComFinanceiro.filter(r => r.status === "ativo" && r.data >= todayStr()).sort((a, b) => a.data.localeCompare(b.data)).slice(0, 6);
+    return { totalPrevisto, aReceber, quitadas, pendentesSaldo, canceladosNoMes, recebidoNoMes, aDevolverGlobal, proximos, numReservas: ativas.length, y, m };
+  }, [reservasComFinanceiro]);
+
+  function irParaMes(a, m) { setAno(a); setMes(m); setTela("mes"); setModo("lista"); setFiltro("todos"); setBusca(""); }
+
+  if (!desbloqueado) {
+    return <TelaSenha onEntrar={() => { sessionStorage.setItem("el_unlocked", "true"); setDesbloqueado(true); }} />;
+  }
+
+  if (carregando) {
+    return (
+      <div style={{ background: PALETA.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: PALETA.teal }}>Carregando Espaço & Lazer…</div>
+      </div>
+    );
+  }
+
+  if (erroCarregar) {
+    return (
+      <div style={{ background: PALETA.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ background: "#fff", padding: 24, borderRadius: 16, maxWidth: 420, textAlign: "center" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>{ICON.warn}</div>
+          <p style={{ color: PALETA.red, fontWeight: 600, marginBottom: 6 }}>Não foi possível carregar os dados</p>
+          <p style={{ color: PALETA.slate, fontSize: 14, marginBottom: 16 }}>{erroCarregar}</p>
+          <button onClick={recarregar} style={{ background: PALETA.coral, color: "#fff", padding: "10px 20px", borderRadius: 10, fontWeight: 600 }}>Tentar novamente</button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ------------------------- ações de reserva ------------------------- */
+
+  async function criarReserva(dados) {
+    const datasExtras = (dados.datasExtras || []).filter(d => d.data);
+    const todasDatas = [dados.data, ...datasExtras.map(d => d.data)];
+    const conflito = conflitoDeData(reservas, todasDatas, null);
+    if (conflito) { showToast(`Já existe uma reserva ativa para ${fmtDataBR(conflito.data)} (${conflito.nome}).`, "erro"); return false; }
+    try {
+      const { data: novaRow, error } = await sb.from("reservas").insert({
+        nome: dados.nome, data: dados.data,
+        valor_manual: dados.valorManual === "" ? null : Number(dados.valorManual),
+        piscina: dados.piscina, pula_pula: dados.pulaPula, obs: dados.obs || "",
+        reajuste: Number(dados.reajuste) || 0, sinal_valor: config.sinal, status: "ativo",
+        datas_extras: datasExtras.map(d => ({ data: d.data, valorManual: d.valorManual === "" ? null : Number(d.valorManual) })),
+      }).select().single();
+      if (error) throw error;
+      await sb.from("pagamentos").insert({ reserva_id: novaRow.id, data: todayStr(), valor: config.sinal, tipo: "sinal", obs: "Sinal da reserva" });
+      await inserirHistorico(novaRow.id, "Reserva criada");
+      if (datasExtras.length) await inserirHistorico(novaRow.id, `Contrato com ${1 + datasExtras.length} datas: ${todasDatas.map(fmtDataBR).join(", ")}`);
+      await inserirHistorico(novaRow.id, `Sinal de ${fmtBRL(config.sinal)} recebido`);
+      await recarregar();
+      showToast("Reserva criada com sucesso.");
+      return true;
+    } catch (e) { showToast("Erro ao criar reserva: " + e.message, "erro"); return false; }
+  }
+
+  async function editarReserva(id, dados) {
+    const atual = reservas.find(r => r.id === id);
+    if (!atual) return false;
+    const datasExtras = (dados.datasExtras || []).filter(d => d.data);
+    const todasDatas = [dados.data, ...datasExtras.map(d => d.data)];
+    const datasAntes = todasDatasDe(atual);
+    const mudouDatas = JSON.stringify([...todasDatas].sort()) !== JSON.stringify([...datasAntes].sort());
+    if (mudouDatas) {
+      const conflito = conflitoDeData(reservas, todasDatas, id);
+      if (conflito) { showToast(`Já existe uma reserva ativa para ${fmtDataBR(conflito.data)} (${conflito.nome}).`, "erro"); return false; }
+    }
+    try {
+      const { error } = await sb.from("reservas").update({
+        nome: dados.nome, data: dados.data,
+        valor_manual: dados.valorManual === "" ? null : Number(dados.valorManual),
+        piscina: dados.piscina, pula_pula: dados.pulaPula, obs: dados.obs || "", reajuste: Number(dados.reajuste) || 0,
+        datas_extras: datasExtras.map(d => ({ data: d.data, valorManual: d.valorManual === "" ? null : Number(d.valorManual) })),
+        updated_at: nowISO(),
+      }).eq("id", id);
+      if (error) throw error;
+      if (mudouDatas) await inserirHistorico(id, `Datas do contrato atualizadas: ${todasDatas.map(fmtDataBR).join(", ")}`);
+      await recarregar();
+      showToast("Reserva atualizada.");
+      return true;
+    } catch (e) { showToast("Erro ao editar: " + e.message, "erro"); return false; }
+  }
+
+  async function adicionarPagamento(id, p) {
+    try {
+      const { error } = await sb.from("pagamentos").insert({ reserva_id: id, data: p.data, valor: Number(p.valor), tipo: "pagamento", obs: p.obs || "" });
+      if (error) throw error;
+      await inserirHistorico(id, `Pagamento de ${fmtBRL(p.valor)} recebido em ${fmtDataBR(p.data)}`);
+      await recarregar();
+      showToast("Pagamento registrado.");
+    } catch (e) { showToast("Erro ao registrar pagamento: " + e.message, "erro"); }
+  }
+
+  async function excluirPagamento(reservaId, pagamentoId) {
+    try {
+      await sb.from("pagamentos").delete().eq("id", pagamentoId);
+      await inserirHistorico(reservaId, "Pagamento removido");
+      await recarregar();
+    } catch (e) { showToast("Erro ao remover pagamento: " + e.message, "erro"); }
+  }
+
+  async function cancelarEvento(id, { data, motivo }) {
+    const r = reservas.find(x => x.id === id);
+    if (!r) return;
+    const fin = computeFinanceiro(r, config);
+    try {
+      const { error } = await sb.from("reservas").update({ status: "cancelado", updated_at: nowISO() }).eq("id", id);
+      if (error) throw error;
+      await sb.from("cancelamentos").insert({ reserva_id: id, data, motivo: motivo || "", sinal_retido: r.sinalValor, total_pago_no_cancelamento: fin.totalPago });
+      await inserirHistorico(id, `Evento cancelado (data do cancelamento: ${fmtDataBR(data)})`);
+      if (motivo) await inserirHistorico(id, `Motivo: ${motivo}`);
+      await recarregar();
+      showToast("Evento cancelado. A data foi liberada.");
+    } catch (e) { showToast("Erro ao cancelar: " + e.message, "erro"); }
+  }
+
+  async function vigorarContrato(id) {
+    const r = reservas.find(x => x.id === id);
+    if (!r) return { ok: false };
+    const conflito = conflitoDeData(reservas, todasDatasDe(r), id);
+    if (conflito) { showToast(`Não é possível vigorar: ${fmtDataBR(conflito.data)} já possui reserva ativa (${conflito.nome}).`, "erro"); return { ok: false }; }
+    const fin = computeFinanceiro(r, config);
+    try {
+      const { error } = await sb.from("reservas").update({ status: "ativo", reativado: true, updated_at: nowISO() }).eq("id", id);
+      if (error) throw error;
+      await inserirHistorico(id, "Cancelamento revertido / contrato vigente");
+      if (fin.totalDevolvido > 0) await inserirHistorico(id, `Valor devolvido anteriormente (${fmtBRL(fin.totalDevolvido)}) voltou a compor o saldo devedor`);
+      await recarregar();
+      showToast("Contrato vigorado novamente.");
+      return { ok: true };
+    } catch (e) { showToast("Erro ao vigorar: " + e.message, "erro"); return { ok: false }; }
+  }
+
+  async function registrarDevolucao(id, { data, valor, obs }) {
+    try {
+      const { error } = await sb.from("devolucoes").insert({ reserva_id: id, data, valor: Number(valor), obs: obs || "" });
+      if (error) throw error;
+      await inserirHistorico(id, `Devolução de ${fmtBRL(valor)} registrada`);
+      await recarregar();
+      showToast("Devolução registrada.");
+    } catch (e) { showToast("Erro ao registrar devolução: " + e.message, "erro"); }
+  }
+
+  async function excluirReserva(id) {
+    try {
+      await sb.from("reservas").delete().eq("id", id);
+      await recarregar();
+      showToast("Reserva excluída.");
+    } catch (e) { showToast("Erro ao excluir: " + e.message, "erro"); }
+  }
+
+  async function salvarConfig(novo) {
+    try {
+      const { error } = await sb.from("configuracoes").update({
+        preco_seg: novo.precos.seg, preco_ter: novo.precos.ter, preco_qua: novo.precos.qua, preco_qui: novo.precos.qui,
+        preco_sex: novo.precos.sex, preco_sab: novo.precos.sab, preco_dom: novo.precos.dom,
+        piscina: novo.piscina, pula_pula: novo.pulaPula, sinal: novo.sinal,
+        updated_at: nowISO(),
+      }).eq("id", 1);
+      if (error) throw error;
+      await recarregar();
+      return true;
+    } catch (e) { showToast("Erro ao salvar configurações: " + e.message, "erro"); return false; }
+  }
+
+  /* ------------------------------ derivados ------------------------------ */
+
+  return (
+    <div style={{ background: PALETA.bg, minHeight: "100vh", color: PALETA.ink }}>
+      <div style={{ display: "flex", minHeight: "100vh" }} className="el-layout">
+        <Sidebar tela={tela} setTela={setTela} ano={ano} setAno={setAno} mes={mes} irParaMes={irParaMes}
+          sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onSair={() => { sessionStorage.removeItem("el_unlocked"); setDesbloqueado(false); }} />
+        {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 30 }} className="el-overlay" />}
+
+        <main style={{ flex: 1, minWidth: 0 }}>
+          <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", position: "sticky", top: 0, zIndex: 20, background: PALETA.bg, borderBottom: `1px solid ${PALETA.border}` }}>
+            <button className="el-hamburger" onClick={() => setSidebarOpen(true)} style={{ background: "none", display: "none" }}>☰</button>
+            <div>
+              <h1 className="font-display" style={{ fontWeight: 700, fontSize: 22, color: PALETA.tealDark }}>
+                {tela === "dashboard" && "Dashboard"}
+                {tela === "mes" && `${MONTH_NAMES[mes]} de ${ano}`}
+                {tela === "config" && "Configurações"}
+                {tela === "comparativo" && "Comparativo entre períodos"}
+              </h1>
+              {tela === "mes" && <p style={{ fontSize: 13, color: PALETA.slate }}>{resumoMes.numReservas} reserva(s) ativa(s) neste mês</p>}
+            </div>
+            {tela === "mes" && (
+              <button onClick={() => setModalNovo(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 12, fontWeight: 600, fontSize: 14, color: "#fff", background: PALETA.coral }}>
+                {ICON.plus} Nova reserva
+              </button>
+            )}
+          </header>
+
+          <div style={{ padding: 20 }}>
+            {tela === "dashboard" && <Dashboard data={dashboardData} onIrParaMes={irParaMes} />}
+            {tela === "mes" && (
+              <MesView ano={ano} mes={mes} onAno={setAno} onMes={setMes} modo={modo} setModo={setModo}
+                busca={busca} setBusca={setBusca} filtro={filtro} setFiltro={setFiltro}
+                resumo={resumoMes} reservas={reservasFiltradas} reservaAberta={reservaAberta} setReservaAberta={setReservaAberta}
+                onEditar={setModalEditar} onPagamento={setModalPagamento} onCancelar={setModalCancelar}
+                onVigorar={setModalVigorar} onDevolucao={setModalDevolucao} onExcluir={setModalExcluir}
+                onExcluirPagamento={excluirPagamento} />
+            )}
+            {tela === "config" && <ConfigView config={config} onSalvar={salvarConfig} />}
+            {tela === "comparativo" && <ComparativoView reservasComFinanceiro={reservasComFinanceiro} />}
+          </div>
+        </main>
+      </div>
+
+      {modalNovo && <ReservaFormModal titulo="Nova reserva" config={config} dataInicial={tela === "mes" ? `${ano}-${pad(mes + 1)}-01` : todayStr()}
+        onFechar={() => setModalNovo(false)} onSalvar={async (d) => { if (await criarReserva(d)) setModalNovo(false); }} />}
+      {modalEditar && <ReservaFormModal titulo="Editar reserva" config={config} reserva={modalEditar}
+        onFechar={() => setModalEditar(null)} onSalvar={async (d) => { if (await editarReserva(modalEditar.id, d)) setModalEditar(null); }} />}
+      {modalPagamento && <PagamentoModal reserva={modalPagamento} onFechar={() => setModalPagamento(null)}
+        onSalvar={async (p) => { await adicionarPagamento(modalPagamento.id, p); setModalPagamento(null); }} />}
+      {modalCancelar && <CancelarModal reserva={modalCancelar} config={config} onFechar={() => setModalCancelar(null)}
+        onConfirmar={async (d) => { await cancelarEvento(modalCancelar.id, d); setModalCancelar(null); }} />}
+      {modalVigorar && <VigorarModal reserva={modalVigorar} config={config} onFechar={() => setModalVigorar(null)}
+        onConfirmar={async () => { const res = await vigorarContrato(modalVigorar.id); if (res.ok) setModalVigorar(null); }} />}
+      {modalDevolucao && <DevolucaoModal reserva={modalDevolucao} config={config} onFechar={() => setModalDevolucao(null)}
+        onSalvar={async (d) => { await registrarDevolucao(modalDevolucao.id, d); setModalDevolucao(null); }} />}
+      {modalExcluir && <ConfirmModal titulo="Excluir reserva"
+        mensagem={`Tem certeza que deseja excluir a reserva de ${modalExcluir.nome} (${fmtDataBR(modalExcluir.data)})? Todos os dados e pagamentos relacionados serão excluídos permanentemente.`}
+        corBotao={PALETA.red} textoBotao="Excluir definitivamente" onFechar={() => setModalExcluir(null)}
+        onConfirmar={async () => { await excluirReserva(modalExcluir.id); setModalExcluir(null); }} />}
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 20, right: 20, left: 20, zIndex: 50, padding: "12px 16px", borderRadius: 12, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", fontSize: 14, fontWeight: 500, color: "#fff", background: toast.tone === "erro" ? PALETA.red : PALETA.tealDark, maxWidth: 420, marginLeft: "auto" }}>
+          {toast.tone === "erro" ? ICON.warn : ICON.check} {toast.msg}
+        </div>
+      )}
+
+      <style>{`
+        @media (max-width: 1024px) {
+          .el-layout > aside { position: fixed; z-index: 40; top:0; left:0; height:100%; transform: translateX(-100%); transition: transform .2s; }
+          .el-layout > aside.open { transform: translateX(0); }
+          .el-hamburger { display: block !important; }
+          .el-overlay { display: block; }
+        }
+        @media (min-width: 1025px) { .el-overlay { display: none; } }
+      `}</style>
+    </div>
+  );
+}
+
+/* ============================== Login ============================== */
+
+function TelaSenha({ onEntrar }) {
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [checando, setChecando] = useState(false);
+
+  async function entrar() {
+    setChecando(true); setErro("");
+    try {
+      const { data, error } = await sb.rpc("verificar_senha_filha", { senha });
+      if (error) throw error;
+      if (data === true) onEntrar();
+      else setErro("Senha incorreta.");
+    } catch (e) { setErro("Não foi possível verificar a senha: " + e.message); }
+    finally { setChecando(false); }
+  }
+
+  return (
+    <div style={{ background: PALETA.tealDark, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 32, width: "100%", maxWidth: 360 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: PALETA.coral, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginBottom: 16 }}>{ICON.party}</div>
+        <h1 className="font-display" style={{ fontWeight: 700, fontSize: 20, color: PALETA.tealDark, marginBottom: 4 }}>Espaço & Lazer</h1>
+        <p style={{ fontSize: 13, color: PALETA.slate, marginBottom: 20 }}>Digite a senha de acesso ao painel administrativo.</p>
+        <input type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()}
+          placeholder="Senha de acesso" style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${PALETA.border}`, fontSize: 14, marginBottom: 12 }} autoFocus />
+        {erro && <div style={{ fontSize: 13, color: PALETA.red, marginBottom: 12 }}>{erro}</div>}
+        <button onClick={entrar} disabled={checando || !senha} style={{ width: "100%", padding: 12, borderRadius: 12, background: PALETA.coral, color: "#fff", fontWeight: 600, opacity: checando || !senha ? 0.5 : 1 }}>
+          {checando ? "Verificando..." : "Entrar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Componentes ============================== */
+
+function Sidebar({ tela, setTela, ano, setAno, mes, irParaMes, sidebarOpen, setSidebarOpen, onSair }) {
+  return (
+    <aside className={sidebarOpen ? "open" : ""} style={{ width: 256, flexShrink: 0, background: PALETA.tealDark, color: "#EAF3F1" }}>
+      <div style={{ padding: 20, display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ width: 36, height: 36, borderRadius: 12, background: PALETA.coral, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{ICON.party}</div>
+        <div>
+          <div className="font-display" style={{ fontWeight: 700, fontSize: 17, lineHeight: 1 }}>Espaço & Lazer</div>
+          <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4 }}>Painel administrativo</div>
+        </div>
+        <button onClick={() => setSidebarOpen(false)} className="el-hamburger" style={{ marginLeft: "auto", background: "none", color: "#fff", display: "none" }}>{ICON.close}</button>
+      </div>
+      <nav style={{ padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+        <SideBtn label="Dashboard" icon={ICON.dashboard} active={tela === "dashboard"} onClick={() => { setTela("dashboard"); setSidebarOpen(false); }} />
+        <SideBtn label="Reservas" icon={ICON.reservas} active={tela === "mes"} onClick={() => { setTela("mes"); setSidebarOpen(false); }} />
+        <SideBtn label="Comparativo" icon={ICON.compare} active={tela === "comparativo"} onClick={() => { setTela("comparativo"); setSidebarOpen(false); }} />
+        <SideBtn label="Configurações" icon={ICON.config} active={tela === "config"} onClick={() => { setTela("config"); setSidebarOpen(false); }} />
+      </nav>
+      <div style={{ padding: 12, marginTop: 8 }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.5, padding: "0 12px", marginBottom: 8 }}>Ano</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 12px" }}>
+          {[ano - 1, ano, ano + 1, ano + 2].map(y => (
+            <button key={y} onClick={() => setAno(y)} style={{ padding: "4px 10px", borderRadius: 8, fontSize: 13, background: y === ano ? PALETA.coral : "rgba(255,255,255,0.06)", color: "#EAF3F1" }}>{y}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, textTransform: "uppercase", opacity: 0.5, padding: "0 12px", margin: "16px 0 8px" }}>Meses de {ano}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, padding: "0 12px" }}>
+          {MONTH_NAMES.map((nome, i) => (
+            <button key={nome} onClick={() => irParaMes(ano, i)} style={{ fontSize: 11, padding: "6px 0", borderRadius: 8, background: tela === "mes" && mes === i ? PALETA.tealSoft : "rgba(255,255,255,0.05)", color: "#EAF3F1" }}>{nome.slice(0, 3)}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: 12, marginTop: 8 }}>
+        <button onClick={onSair} style={{ width: "100%", fontSize: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#EAF3F1" }}>Sair</button>
+      </div>
+    </aside>
+  );
+}
+function SideBtn({ icon, label, active, onClick }) {
+  return <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 12, fontSize: 14, fontWeight: 500, background: active ? PALETA.coral : "transparent", color: active ? "#fff" : "#CFE1DC", textAlign: "left" }}><span>{icon}</span>{label}</button>;
+}
+function StatusBadge({ status }) {
+  const s = STATUS_STYLE[status] || STATUS_STYLE["Reservado"];
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: s.bg, color: s.fg }}>{s.i} {status}</span>;
+}
+function StatCard({ label, valor, icon, cor, sub }) {
+  return (
+    <div style={{ borderRadius: 16, padding: 16, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: PALETA.slate }}>{label}</span>
+        <div style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: cor + "1A" }}>{icon}</div>
+      </div>
+      <div className="font-display" style={{ fontWeight: 700, fontSize: 20, color: PALETA.tealDark }}>{valor}</div>
+      {sub && <div style={{ fontSize: 12, marginTop: 2, color: PALETA.slate }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Dashboard({ data, onIrParaMes }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 960 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12 }}>
+        <StatCard label="Reservas ativas (mês)" valor={data.numReservas} icon={ICON.users} cor={PALETA.teal} />
+        <StatCard label="Total previsto" valor={fmtBRL(data.totalPrevisto)} icon={ICON.wallet} cor={PALETA.sky} />
+        <StatCard label="Recebido no mês" valor={fmtBRL(data.recebidoNoMes)} icon={ICON.up} cor={PALETA.green} />
+        <StatCard label="A receber" valor={fmtBRL(data.aReceber)} icon={ICON.down} cor={PALETA.amber} />
+        <StatCard label="Quitadas" valor={data.quitadas} icon={ICON.check} cor={PALETA.green} />
+        <StatCard label="Saldo pendente" valor={data.pendentesSaldo} icon={ICON.clock} cor={PALETA.violet} />
+        <StatCard label="Cancelados (mês)" valor={data.canceladosNoMes} icon={ICON.ban} cor={PALETA.red} />
+        <StatCard label="A devolver (total)" valor={fmtBRL(data.aDevolverGlobal)} icon={ICON.rotate} cor={PALETA.coralDark} />
+      </div>
+      <div style={{ borderRadius: 16, padding: 20, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h3 className="font-display" style={{ fontWeight: 700, color: PALETA.tealDark }}>Próximos eventos</h3>
+          <button onClick={() => onIrParaMes(data.y, data.m)} style={{ fontSize: 12, fontWeight: 600, color: PALETA.sky, background: "none" }}>ver mês atual →</button>
+        </div>
+        {data.proximos.length === 0 && <p style={{ fontSize: 14, color: PALETA.slate }}>Nenhum evento futuro cadastrado.</p>}
+        <div>
+          {data.proximos.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: `1px solid ${PALETA.border}` }}>
+              <div style={{ width: 46, textAlign: "center", flexShrink: 0 }}>
+                <div className="font-display" style={{ fontWeight: 700, fontSize: 18, lineHeight: 1, color: PALETA.coral }}>{r.data.split("-")[2]}</div>
+                <div style={{ fontSize: 10, textTransform: "uppercase", color: PALETA.slate }}>{MONTH_NAMES[Number(r.data.split("-")[1]) - 1].slice(0, 3)}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{r.nome}</div>
+                <div style={{ fontSize: 12, color: PALETA.slate }}>{fmtBRL(r.fin.totalPagoLiquido)} pago · {fmtBRL(Math.max(0, r.fin.saldo))} pendente</div>
+              </div>
+              <StatusBadge status={r.fin.status} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MesView(props) {
+  const { ano, mes, onAno, onMes, modo, setModo, busca, setBusca, filtro, setFiltro, resumo, reservas,
+    reservaAberta, setReservaAberta, onEditar, onPagamento, onCancelar, onVigorar, onDevolucao, onExcluir, onExcluirPagamento } = props;
+
+  function mudarMes(delta) { let m = mes + delta, a = ano; if (m < 0) { m = 11; a -= 1; } else if (m > 11) { m = 0; a += 1; } onAno(a); onMes(m); }
+  function irHoje() { const d = new Date(); onAno(d.getFullYear()); onMes(d.getMonth()); }
+  const FILTROS = [["todos", "Todos"], ["pagos", "Pagos"], ["parciais", "Parciais"], ["pendentes", "Pendentes"], ["cancelados", "Cancelados"], ["devolucao", "Devolução pendente"], ["proximos", "Próximos"], ["reativados", "Reativados"]];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+        <button onClick={() => mudarMes(-1)} style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>{ICON.chevronLeft}</button>
+        <button onClick={() => mudarMes(1)} style={{ width: 36, height: 36, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>{ICON.chevronRight}</button>
+        <button onClick={irHoje} style={{ padding: "0 12px", height: 36, borderRadius: 10, fontSize: 13, fontWeight: 500, background: PALETA.surface, border: `1px solid ${PALETA.border}`, color: PALETA.teal }}>Mês atual</button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4, borderRadius: 10, padding: 4, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+          <button onClick={() => setModo("lista")} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 13, background: modo === "lista" ? PALETA.tealDark : "transparent", color: modo === "lista" ? "#fff" : PALETA.slate }}>{ICON.list} Lista</button>
+          <button onClick={() => setModo("calendario")} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 13, background: modo === "calendario" ? PALETA.tealDark : "transparent", color: modo === "calendario" ? "#fff" : PALETA.slate }}>{ICON.calendar} Calendário</button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12 }}>
+        <StatCard label="Total previsto" valor={fmtBRL(resumo.totalPrevisto)} icon={ICON.wallet} cor={PALETA.sky} />
+        <StatCard label="Recebido no mês" valor={fmtBRL(resumo.recebidoNoMes)} icon={ICON.up} cor={PALETA.green} />
+        <StatCard label="A receber" valor={fmtBRL(resumo.aReceber)} icon={ICON.down} cor={PALETA.amber} />
+        <StatCard label="Quitadas / pendentes" valor={`${resumo.quitadas} / ${resumo.pendentes}`} icon={ICON.check} cor={PALETA.violet} />
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ position: "relative" }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: PALETA.slate }}>{ICON.search}</span>
+          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome ou data..." style={{ width: "100%", padding: "10px 12px 10px 34px", borderRadius: 12, fontSize: 14, background: PALETA.surface, border: `1px solid ${PALETA.border}` }} />
+        </div>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+          {FILTROS.map(([v, l]) => (
+            <button key={v} onClick={() => setFiltro(v)} style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0, background: filtro === v ? PALETA.teal : PALETA.surface, color: filtro === v ? "#fff" : PALETA.slate, border: `1px solid ${filtro === v ? PALETA.teal : PALETA.border}` }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {modo === "lista" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {reservas.length === 0 && <div style={{ textAlign: "center", padding: "60px 0", borderRadius: 16, background: PALETA.surface, border: `1px dashed ${PALETA.border}`, color: PALETA.slate }}>Nenhuma reserva encontrada com esses filtros.</div>}
+          {reservas.map(r => (
+            <ReservaCard key={r.id} r={r} aberta={reservaAberta === r.id} onToggle={() => setReservaAberta(reservaAberta === r.id ? null : r.id)}
+              onEditar={() => onEditar(r)} onPagamento={() => onPagamento(r)} onCancelar={() => onCancelar(r)} onVigorar={() => onVigorar(r)}
+              onDevolucao={() => onDevolucao(r)} onExcluir={() => onExcluir(r)} onExcluirPagamento={(pid) => onExcluirPagamento(r.id, pid)} />
+          ))}
+        </div>
+      ) : (
+        <CalendarioMes ano={ano} mes={mes} reservas={reservas} onAbrir={(id) => setReservaAberta(id)} />
+      )}
+    </div>
+  );
+}
+
+function ReservaCard({ r, aberta, onToggle, onEditar, onPagamento, onCancelar, onVigorar, onDevolucao, onExcluir, onExcluirPagamento }) {
+  const fin = r.fin, cancelada = r.status === "cancelado";
+  return (
+    <div style={{ borderRadius: 16, overflow: "hidden", background: PALETA.surface, border: `1px solid ${cancelada ? PALETA.red + "55" : PALETA.border}`, opacity: cancelada ? 0.92 : 1 }}>
+      <button onClick={onToggle} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: 16, textAlign: "left", background: "none" }}>
+        <div style={{ width: 46, textAlign: "center", flexShrink: 0 }}>
+          <div className="font-display" style={{ fontWeight: 700, fontSize: 18, lineHeight: 1, color: cancelada ? PALETA.slate : PALETA.coral }}>{r.data.split("-")[2]}</div>
+          <div style={{ fontSize: 10, textTransform: "uppercase", color: PALETA.slate }}>{WEEKDAY_SHORT[parseDateLocal(r.data).getDay()]}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{r.nome}</span>
+            {r.piscina && <span title="Piscina">{ICON.piscina}</span>}
+            {fin.qtdDatas > 1 && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 999, background: PALETA.violetBg, color: PALETA.violet }}>{fin.qtdDatas} datas</span>}
+            {r.reativado && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 999, background: PALETA.violetBg, color: PALETA.violet }}>reativado</span>}
+          </div>
+          <div style={{ fontSize: 12, marginTop: 2, color: PALETA.slate }}>{fmtBRL(fin.valorFinal)} · {fmtBRL(fin.totalPagoLiquido < 0 ? 0 : fin.totalPagoLiquido)} pago</div>
+        </div>
+        <StatusBadge status={fin.status} />
+        <span style={{ transform: aberta ? "rotate(180deg)" : "none", color: PALETA.slate, display: "inline-block" }}>{ICON.chevronDown}</span>
+      </button>
+
+      {aberta && (
+        <div style={{ padding: "0 16px 16px", borderTop: `1px solid ${PALETA.border}`, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px,1fr))", gap: 12, paddingTop: 16, fontSize: 14 }}>
+            <Campo label="Locação" valor={fmtBRL(fin.locacao)} />
+            <Campo label="Piscina" valor={r.piscina ? fmtBRL(fin.piscina) : "—"} />
+            <Campo label="Pula-pula" valor={r.pulaPula ? fmtBRL(fin.pulaPula) : "—"} />
+            <Campo label="Reajuste" valor={fin.reajuste !== 0 ? (fin.reajuste > 0 ? "+ " : "− ") + fmtBRL(Math.abs(fin.reajuste)) : "—"} cor={fin.reajuste > 0 ? PALETA.green : fin.reajuste < 0 ? PALETA.red : undefined} />
+            <Campo label="Valor final" valor={fmtBRL(fin.valorFinal)} destaque />
+            {!cancelada && <Campo label="Saldo devedor" valor={fmtBRL(Math.max(0, fin.saldo))} destaque cor={fin.saldo > 0 ? PALETA.red : PALETA.green} />}
+            {cancelada && <React.Fragment>
+              <Campo label="Sinal retido" valor={fmtBRL(fin.sinalRetido)} />
+              <Campo label="A devolver" valor={fmtBRL(fin.valorADevolver)} />
+              <Campo label="Já devolvido" valor={fmtBRL(fin.totalDevolvido)} />
+              <Campo label="Restante a devolver" valor={fmtBRL(fin.restanteADevolver)} destaque cor={fin.restanteADevolver > 0 ? PALETA.coralDark : PALETA.green} />
+            </React.Fragment>}
+          </div>
+          {r.obs && <div style={{ fontSize: 14, borderRadius: 12, padding: 12, background: PALETA.bg }}><span style={{ fontWeight: 600, color: PALETA.slate }}>OBS: </span>{r.obs}</div>}
+          {fin.qtdDatas > 1 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 8, color: PALETA.slate }}>Datas do contrato ({fin.qtdDatas})</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {fin.detalhePorData.map((d, i) => (
+                  <span key={i} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, background: i === 0 ? PALETA.violetBg : PALETA.bg, color: i === 0 ? PALETA.violet : PALETA.ink, fontWeight: i === 0 ? 600 : 400 }}>
+                    {fmtDataBR(d.data)} · {fmtBRL(d.valor)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 8, color: PALETA.slate }}>Histórico de pagamentos</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {r.pagamentos.map(p => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 14, borderRadius: 10, padding: "8px 12px", background: PALETA.bg }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, fontWeight: 500, background: p.tipo === "sinal" ? PALETA.violetBg : PALETA.greenBg, color: p.tipo === "sinal" ? PALETA.violet : PALETA.green }}>{p.tipo === "sinal" ? "Sinal" : "Pagamento"}</span>
+                    <span style={{ color: PALETA.slate }}>{fmtDataBR(p.data)}</span>
+                    {p.obs && <span style={{ fontSize: 12, color: PALETA.slate }}>· {p.obs}</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600 }}>{fmtBRL(p.valor)}</span>
+                    <button onClick={() => onExcluirPagamento(p.id)} title="Remover" style={{ background: "none", color: PALETA.red }}>{ICON.trash}</button>
+                  </div>
+                </div>
+              ))}
+              {r.devolucoes.map(d => (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 14, borderRadius: 10, padding: "8px 12px", background: PALETA.redBg }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, fontWeight: 500, background: "#fff", color: PALETA.red }}>Devolução</span>
+                    <span style={{ color: PALETA.slate }}>{fmtDataBR(d.data)}</span>
+                    {d.obs && <span style={{ fontSize: 12, color: PALETA.slate }}>· {d.obs}</span>}
+                  </div>
+                  <span style={{ fontWeight: 600, color: PALETA.red }}>− {fmtBRL(d.valor)}</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 12px" }}><span>Total pago</span><span>{fmtBRL(fin.totalPago)}</span></div>
+            </div>
+          </div>
+          {r.cancelamentos.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 8, color: PALETA.slate }}>Histórico de cancelamentos</div>
+              {r.cancelamentos.map((c, i) => <div key={i} style={{ fontSize: 12, borderRadius: 10, padding: "8px 12px", marginBottom: 4, background: PALETA.bg, color: PALETA.slate }}>Cancelado em {fmtDataBR(c.data)} {c.motivo && `— ${c.motivo}`} · Sinal retido: {fmtBRL(c.sinalRetido)}</div>)}
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 8, color: PALETA.slate }}>Linha do tempo</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {r.historico.map((h, i) => <div key={i} style={{ fontSize: 12, display: "flex", gap: 8, color: PALETA.slate }}><span style={{ flexShrink: 0 }}>{fmtDataHoraBR(h.data)}</span><span>—</span><span>{h.texto}</span></div>)}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
+            {!cancelada && <BtnAcao icon={ICON.money} label="Adicionar pagamento" cor={PALETA.green} onClick={onPagamento} />}
+            {!cancelada && <BtnAcao icon={ICON.config} label="Editar" cor={PALETA.teal} onClick={onEditar} />}
+            {!cancelada && <BtnAcao icon={ICON.ban} label="Cancelar evento" cor={PALETA.red} onClick={onCancelar} />}
+            {cancelada && <BtnAcao icon={ICON.undo} label="Vigorar contrato" cor={PALETA.violet} onClick={onVigorar} />}
+            {cancelada && fin.restanteADevolver > 0 && <BtnAcao icon={ICON.rotate} label="Registrar devolução" cor={PALETA.coralDark} onClick={onDevolucao} />}
+            <BtnAcao icon={ICON.trash} label="Excluir reserva" cor={PALETA.red} outline onClick={onExcluir} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function Campo({ label, valor, destaque, cor }) {
+  return <div><div style={{ fontSize: 11, color: PALETA.slate }}>{label}</div><div style={{ fontWeight: destaque ? 700 : 500, color: cor || PALETA.ink }}>{valor}</div></div>;
+}
+function BtnAcao({ icon, label, cor, onClick, outline }) {
+  return <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, ...(outline ? { border: `1px solid ${cor}`, color: cor, background: "transparent" } : { background: cor, color: "#fff" }) }}>{icon} {label}</button>;
+}
+
+function CalendarioMes({ ano, mes, reservas, onAbrir }) {
+  const total = daysInMonth(ano, mes), primeiro = new Date(ano, mes, 1).getDay(), porDia = {};
+  reservas.forEach(r => {
+    todasDatasDe(r).forEach(dataStr => {
+      const [y, m, d] = dataStr.split("-").map(Number);
+      if (y === ano && (m - 1) === mes) (porDia[d] = porDia[d] || []).push(r);
+    });
+  });
+  const celulas = []; for (let i = 0; i < primeiro; i++) celulas.push(null); for (let d = 1; d <= total; d++) celulas.push(d);
+  return (
+    <div style={{ borderRadius: 16, overflow: "hidden", background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", textAlign: "center", fontSize: 12, fontWeight: 600, padding: "8px 0", background: PALETA.bg, color: PALETA.slate }}>
+        {WEEKDAY_SHORT.map(d => <div key={d}>{d}</div>)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
+        {celulas.map((d, i) => (
+          <div key={i} style={{ minHeight: 86, padding: 6, borderRight: `1px solid ${PALETA.border}`, borderBottom: `1px solid ${PALETA.border}` }}>
+            {d && <React.Fragment>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: PALETA.slate }}>{d}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {(porDia[d] || []).map(r => (
+                  <button key={r.id} onClick={() => onAbrir(r.id)} style={{ fontSize: 10, lineHeight: 1.2, textAlign: "left", padding: "4px 6px", borderRadius: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: r.status === "cancelado" ? PALETA.redBg : STATUS_STYLE[r.fin.status].bg, color: r.status === "cancelado" ? PALETA.red : STATUS_STYLE[r.fin.status].fg, textDecoration: r.status === "cancelado" ? "line-through" : "none" }}>{r.nome}</button>
+                ))}
+              </div>
+            </React.Fragment>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------- Modais -------------------------------- */
+
+function ModalShell({ titulo, onFechar, children, largura }) {
+  return (
+    <div onClick={onFechar} style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(15,38,34,0.55)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: largura || 480, background: PALETA.surface, borderRadius: 20, maxHeight: "92vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", position: "sticky", top: 0, background: PALETA.surface, borderBottom: `1px solid ${PALETA.border}` }}>
+          <h3 className="font-display" style={{ fontWeight: 700, fontSize: 17, color: PALETA.tealDark }}>{titulo}</h3>
+          <button onClick={onFechar} style={{ width: 32, height: 32, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: PALETA.bg }}>{ICON.close}</button>
+        </div>
+        <div style={{ padding: 20 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+function Label({ children }) { return <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6, color: PALETA.slate }}>{children}</label>; }
+function Input(props) { return <input {...props} style={{ width: "100%", padding: "10px 12px", borderRadius: 12, fontSize: 14, border: `1px solid ${PALETA.border}`, ...(props.style || {}) }} />; }
+
+function ReservaFormModal({ titulo, config, reserva, dataInicial, onFechar, onSalvar }) {
+  const [nome, setNome] = useState(reserva?.nome || "");
+  const [data, setData] = useState(reserva?.data || dataInicial || todayStr());
+  const [usarManual, setUsarManual] = useState(reserva?.valorManual != null);
+  const [valorManual, setValorManual] = useState(reserva?.valorManual ?? "");
+  const [datasExtras, setDatasExtras] = useState((reserva?.datasExtras || []).map(d => ({ data: d.data, valorManual: d.valorManual ?? "" })));
+  const [piscina, setPiscina] = useState(reserva?.piscina || false);
+  const [pulaPula, setPulaPula] = useState(reserva?.pulaPula || false);
+  const [obs, setObs] = useState(reserva?.obs || "");
+  const [reajuste, setReajuste] = useState(reserva?.reajuste ?? 0);
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const precoDeUmaData = (dataStr, override) => {
+    if (!dataStr) return 0;
+    return (override !== "" && override !== null && override !== undefined) ? Number(override) : config.precos[weekdayKeyOf(dataStr)];
+  };
+  const precoPadrao = data ? config.precos[weekdayKeyOf(data)] : 0;
+  const locacaoPrincipal = usarManual ? precoDeUmaData(data, valorManual) : precoPadrao;
+  const locacaoExtras = datasExtras.reduce((s, d) => s + precoDeUmaData(d.data, d.valorManual), 0);
+  const locacao = locacaoPrincipal + locacaoExtras;
+  const totalPiscina = piscina ? config.piscina : 0;
+  const totalPula = pulaPula ? config.pulaPula : 0;
+  const valorFinal = locacao + totalPiscina + totalPula + (Number(reajuste) || 0);
+
+  function addDataExtra() { setDatasExtras(prev => [...prev, { data: "", valorManual: "" }]); }
+  function removerDataExtra(i) { setDatasExtras(prev => prev.filter((_, idx) => idx !== i)); }
+  function atualizarDataExtra(i, campo, valor) { setDatasExtras(prev => prev.map((d, idx) => idx === i ? { ...d, [campo]: valor } : d)); }
+
+  async function salvar() {
+    if (!nome.trim()) { setErro("Informe o nome do locatário."); return; }
+    if (!data) { setErro("Informe a data do evento."); return; }
+    const extrasValidas = datasExtras.filter(d => d.data);
+    if (extrasValidas.length !== datasExtras.length) { setErro("Preencha ou remova as datas adicionais em branco."); return; }
+    setSalvando(true);
+    await onSalvar({ nome: nome.trim(), data, valorManual: usarManual ? valorManual : "", datasExtras: extrasValidas, piscina, pulaPula, obs, reajuste });
+    setSalvando(false);
+  }
+
+  return (
+    <ModalShell titulo={titulo} onFechar={onFechar}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div><Label>Nome / Contato</Label><Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do locatário" /></div>
+        <div>
+          <Label>Data do evento (principal)</Label>
+          <Input type="date" value={data} onChange={e => setData(e.target.value)} />
+          <div style={{ fontSize: 12, marginTop: 4, color: PALETA.slate }}>{data && WEEKDAY_LABELS[weekdayKeyOf(data)]} · preço padrão: {fmtBRL(precoPadrao)}</div>
+        </div>
+
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <Label>Datas adicionais (mesmo contrato)</Label>
+            <button type="button" onClick={addDataExtra} style={{ fontSize: 12, fontWeight: 600, color: PALETA.sky, background: "none" }}>{ICON.plus} adicionar data</button>
+          </div>
+          {datasExtras.length === 0 && <p style={{ fontSize: 12, color: PALETA.slate }}>Use isso quando o mesmo cliente reservar dois ou mais dias no mesmo contrato.</p>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {datasExtras.map((d, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div style={{ flex: 1 }}>
+                  <Input type="date" value={d.data} onChange={e => atualizarDataExtra(i, "data", e.target.value)} />
+                  {d.data && <div style={{ fontSize: 11, marginTop: 2, color: PALETA.slate }}>{WEEKDAY_LABELS[weekdayKeyOf(d.data)]} · padrão {fmtBRL(config.precos[weekdayKeyOf(d.data)])}</div>}
+                </div>
+                <div style={{ width: 130 }}>
+                  <Input type="number" value={d.valorManual} onChange={e => atualizarDataExtra(i, "valorManual", e.target.value)} placeholder="Valor (opc.)" />
+                </div>
+                <button type="button" onClick={() => removerDataExtra(i)} style={{ width: 38, height: 38, borderRadius: 10, background: PALETA.redBg, color: PALETA.red, flexShrink: 0 }}>{ICON.trash}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 16 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}><input type="checkbox" checked={piscina} onChange={e => setPiscina(e.target.checked)} /> Piscina ({fmtBRL(config.piscina)})</label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}><input type="checkbox" checked={pulaPula} onChange={e => setPulaPula(e.target.checked)} /> Pula-pula ({fmtBRL(config.pulaPula)})</label>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}><input type="checkbox" checked={usarManual} onChange={e => setUsarManual(e.target.checked)} /> Sobrescrever valor da locação da data principal</label>
+        {usarManual && <Input type="number" value={valorManual} onChange={e => setValorManual(e.target.value)} placeholder="Valor manual da locação" />}
+        <div><Label>Reajuste (acréscimo/desconto manual sobre o contrato todo)</Label><Input type="number" value={reajuste} onChange={e => setReajuste(e.target.value)} placeholder="Ex: 50 ou -50" /></div>
+        <div><Label>Observações</Label><textarea value={obs} onChange={e => setObs(e.target.value)} rows={3} style={{ width: "100%", padding: "10px 12px", borderRadius: 12, fontSize: 14, border: `1px solid ${PALETA.border}` }} placeholder="Aniversário, horário especial, pedidos do cliente..." /></div>
+        <div style={{ borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 4, fontSize: 14, background: PALETA.bg }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: PALETA.slate }}>Locação ({1 + datasExtras.filter(d => d.data).length} data{datasExtras.filter(d => d.data).length ? "s" : ""})</span><span>{fmtBRL(locacao)}</span></div>
+          {piscina && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: PALETA.slate }}>Piscina</span><span>{fmtBRL(totalPiscina)}</span></div>}
+          {pulaPula && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: PALETA.slate }}>Pula-pula</span><span>{fmtBRL(totalPula)}</span></div>}
+          {Number(reajuste) !== 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: PALETA.slate }}>Reajuste</span><span>{Number(reajuste) > 0 ? "+ " : "− "}{fmtBRL(Math.abs(Number(reajuste)))}</span></div>}
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, paddingTop: 4, borderTop: `1px solid ${PALETA.border}` }}><span>Valor final</span><span>{fmtBRL(valorFinal)}</span></div>
+          {!reserva && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4, color: PALETA.slate }}><span>Sinal cobrado ao salvar</span><span>{fmtBRL(config.sinal)}</span></div>}
+        </div>
+        {erro && <div style={{ fontSize: 14, padding: "8px 12px", borderRadius: 10, background: PALETA.redBg, color: PALETA.red }}>{erro}</div>}
+        <button onClick={salvar} disabled={salvando} style={{ width: "100%", padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: PALETA.coral, opacity: salvando ? 0.6 : 1 }}>{salvando ? "Salvando..." : reserva ? "Salvar alterações" : "Criar reserva"}</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function PagamentoModal({ reserva, onFechar, onSalvar }) {
+  const [data, setData] = useState(todayStr());
+  const [valor, setValor] = useState("");
+  const [obs, setObs] = useState("");
+  return (
+    <ModalShell titulo={`Adicionar pagamento — ${reserva.nome}`} onFechar={onFechar}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div><Label>Data do pagamento</Label><Input type="date" value={data} onChange={e => setData(e.target.value)} /></div>
+        <div><Label>Valor</Label><Input type="number" value={valor} onChange={e => setValor(e.target.value)} placeholder="0,00" /></div>
+        <div><Label>Observação (opcional)</Label><Input value={obs} onChange={e => setObs(e.target.value)} placeholder="Ex: transferência, dinheiro..." /></div>
+        <button disabled={!valor || Number(valor) <= 0} onClick={() => onSalvar({ data, valor, obs })} style={{ width: "100%", padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: PALETA.green, opacity: (!valor || Number(valor) <= 0) ? 0.4 : 1 }}>Registrar pagamento</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function CancelarModal({ reserva, config, onFechar, onConfirmar }) {
+  const [data, setData] = useState(todayStr());
+  const [motivo, setMotivo] = useState("");
+  const fin = computeFinanceiro(reserva, config);
+  const sinalRetido = reserva.sinalValor;
+  const aDevolver = Math.max(0, fin.totalPago - sinalRetido);
+  return (
+    <ModalShell titulo="Cancelar evento" onFechar={onFechar}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 6, fontSize: 14, background: PALETA.redBg }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Valor total do evento</span><span style={{ fontWeight: 600 }}>{fmtBRL(fin.valorFinal)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Total pago</span><span style={{ fontWeight: 600 }}>{fmtBRL(fin.totalPago)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Sinal não reembolsável</span><span style={{ fontWeight: 600 }}>{fmtBRL(sinalRetido)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: `1px solid ${PALETA.red}44` }}><span style={{ fontWeight: 700 }}>Valor a devolver</span><span style={{ fontWeight: 700 }}>{fmtBRL(aDevolver)}</span></div>
+        </div>
+        <div><Label>Data do cancelamento</Label><Input type="date" value={data} onChange={e => setData(e.target.value)} /></div>
+        <div><Label>Motivo do cancelamento (opcional)</Label><Input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="Ex: cliente desistiu" /></div>
+        <button onClick={() => onConfirmar({ data, motivo })} style={{ width: "100%", padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: PALETA.red }}>Confirmar cancelamento</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function VigorarModal({ reserva, config, onFechar, onConfirmar }) {
+  const fin = computeFinanceiro(reserva, config);
+  return (
+    <ModalShell titulo="Vigorar contrato" onFechar={onFechar}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <p style={{ fontSize: 14, color: PALETA.slate }}>Deseja realmente vigorar este contrato? A reserva voltará a ficar ativa e a data ({fmtDataBR(reserva.data)}) será considerada ocupada novamente.</p>
+        {fin.totalDevolvido > 0 && (
+          <div style={{ borderRadius: 12, padding: 12, fontSize: 14, display: "flex", flexDirection: "column", gap: 6, background: PALETA.amberBg, color: "#7A5300" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>{ICON.warn} Este contrato possui devolução já realizada</div>
+            <div>Ao vigorar novamente, o valor devolvido volta a ser considerado como devido pelo cliente.</div>
+            <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 4 }}><span>Total originalmente pago</span><span>{fmtBRL(fin.totalPago)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span>Valor devolvido</span><span>{fmtBRL(fin.totalDevolvido)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span>Novo saldo devido</span><span>{fmtBRL(fin.valorFinal - (fin.totalPago - fin.totalDevolvido))}</span></div>
+          </div>
+        )}
+        <button onClick={onConfirmar} style={{ width: "100%", padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: PALETA.violet }}>Vigorar contrato</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function DevolucaoModal({ reserva, config, onFechar, onSalvar }) {
+  const fin = computeFinanceiro(reserva, config);
+  const [data, setData] = useState(todayStr());
+  const [valor, setValor] = useState(fin.restanteADevolver || 0);
+  const [obs, setObs] = useState("");
+  return (
+    <ModalShell titulo="Registrar devolução" onFechar={onFechar}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ borderRadius: 12, padding: 12, fontSize: 14, display: "flex", justifyContent: "space-between", background: PALETA.bg }}><span style={{ color: PALETA.slate }}>Restante a devolver</span><span style={{ fontWeight: 700 }}>{fmtBRL(fin.restanteADevolver)}</span></div>
+        <div><Label>Data da devolução</Label><Input type="date" value={data} onChange={e => setData(e.target.value)} /></div>
+        <div><Label>Valor devolvido</Label><Input type="number" value={valor} onChange={e => setValor(e.target.value)} /></div>
+        <div><Label>Observação (opcional)</Label><Input value={obs} onChange={e => setObs(e.target.value)} /></div>
+        {Number(valor) > fin.restanteADevolver + 0.01 && <div style={{ fontSize: 12, padding: "8px 12px", borderRadius: 10, background: PALETA.amberBg, color: "#7A5300" }}>Atenção: valor maior que o restante a devolver.</div>}
+        <button disabled={!valor || Number(valor) <= 0} onClick={() => onSalvar({ data, valor, obs })} style={{ width: "100%", padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: PALETA.coralDark, opacity: (!valor || Number(valor) <= 0) ? 0.4 : 1 }}>Registrar devolução</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function ConfirmModal({ titulo, mensagem, corBotao, textoBotao, onFechar, onConfirmar }) {
+  return (
+    <ModalShell titulo={titulo} onFechar={onFechar}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <p style={{ fontSize: 14, color: PALETA.slate }}>{mensagem}</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onFechar} style={{ flex: 1, padding: 14, borderRadius: 14, fontWeight: 700, background: PALETA.bg, color: PALETA.ink }}>Cancelar</button>
+          <button onClick={onConfirmar} style={{ flex: 1, padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: corBotao }}>{textoBotao}</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+const CORES_SERIES = [PALETA.coral, PALETA.sky, PALETA.violet, PALETA.green, PALETA.amber, PALETA.teal, PALETA.red, PALETA.coralDark];
+
+function ComparativoView({ reservasComFinanceiro }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  const hoje = new Date();
+  const anoAtual = hoje.getFullYear();
+
+  const [modo, setModo] = useState("anos-recentes"); // anos-recentes | anos-selecionados | ultimos-meses | meses-selecionados
+  const [anosSelecionados, setAnosSelecionados] = useState([anoAtual, anoAtual - 1]);
+  const [qtdMeses, setQtdMeses] = useState(6);
+  const [metrica, setMetrica] = useState("recebido"); // recebido | previsto
+
+  const anosParaEscolher = useMemo(() => {
+    const anos = [];
+    for (let y = anoAtual + 1; y >= anoAtual - 6; y--) anos.push(y);
+    return anos;
+  }, [anoAtual]);
+
+  function toggleAno(y) {
+    setAnosSelecionados(prev => prev.includes(y) ? prev.filter(a => a !== y) : [...prev, y].sort((a, b) => a - b));
+  }
+
+  // Monta o dataset de acordo com o modo escolhido
+  const { labels, series, tipo } = useMemo(() => {
+    if (modo === "anos-recentes" || modo === "anos-selecionados") {
+      const anos = modo === "anos-recentes"
+        ? Array.from({ length: 5 }, (_, i) => anoAtual - 4 + i)
+        : (anosSelecionados.length ? [...anosSelecionados].sort((a, b) => a - b) : [anoAtual]);
+      const labels = MONTH_NAMES.map(m => m.slice(0, 3));
+      const series = anos.map((ano, i) => ({
+        ano, cor: CORES_SERIES[i % CORES_SERIES.length],
+        valores: Array.from({ length: 12 }, (_, m) => getValorMes(reservasComFinanceiro, ano, m, metrica)),
+      }));
+      return { labels, series, tipo: "anos" };
+    }
+    // modos baseados em meses corridos
+    const n = modo === "ultimos-meses" ? 12 : Math.max(2, Math.min(36, Number(qtdMeses) || 6));
+    const pontos = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(anoAtual, hoje.getMonth() - i, 1);
+      pontos.push({ ano: d.getFullYear(), mes: d.getMonth() });
+    }
+    const labels = pontos.map(p => `${MONTH_NAMES[p.mes].slice(0, 3)}/${String(p.ano).slice(2)}`);
+    const valores = pontos.map(p => getValorMes(reservasComFinanceiro, p.ano, p.mes, metrica));
+    return { labels, series: [{ ano: null, cor: PALETA.coral, valores }], tipo: "meses" };
+  }, [modo, anosSelecionados, qtdMeses, metrica, reservasComFinanceiro, anoAtual, hoje]);
+
+  // Desenha / atualiza o gráfico
+  useEffect(() => {
+    if (!canvasRef.current || typeof window.Chart === "undefined") return;
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+    const ctx = canvasRef.current.getContext("2d");
+    chartRef.current = new window.Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: series.map(s => ({
+          label: s.ano ? String(s.ano) : (metrica === "recebido" ? "Recebido" : "Previsto"),
+          data: s.valores,
+          borderColor: s.cor,
+          backgroundColor: s.cor + "22",
+          pointBackgroundColor: s.cor,
+          tension: 0.3,
+          fill: tipo === "meses",
+          borderWidth: 2,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: series.length > 1, labels: { color: PALETA.ink, font: { family: "Inter" } } },
+          tooltip: {
+            callbacks: { label: (item) => `${item.dataset.label}: ${fmtBRL(item.parsed.y)}` },
+          },
+        },
+        scales: {
+          x: { ticks: { color: PALETA.slate }, grid: { color: PALETA.border } },
+          y: { ticks: { color: PALETA.slate, callback: (v) => fmtBRL(v) }, grid: { color: PALETA.border } },
+        },
+      },
+    });
+    return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+  }, [labels, series, tipo, metrica]);
+
+  // Variações percentuais mostradas abaixo do gráfico
+  const variacoes = useMemo(() => {
+    if (tipo === "anos") {
+      return series.map(s => {
+        const totalAno = s.valores.reduce((a, b) => a + b, 0);
+        const totalAnoAnterior = MONTH_NAMES.reduce((acc, _, m) => acc + getValorMes(reservasComFinanceiro, s.ano - 1, m, metrica), 0);
+        const pct = totalAnoAnterior !== 0 ? ((totalAno - totalAnoAnterior) / Math.abs(totalAnoAnterior)) * 100 : (totalAno > 0 ? 100 : 0);
+        return { rotulo: String(s.ano), valor: totalAno, pct, cor: s.cor, comparadoCom: `vs ${s.ano - 1}` };
+      });
+    }
+    const s = series[0];
+    return labels.map((lab, i) => {
+      if (i === 0) return { rotulo: lab, valor: s.valores[i], pct: null, comparadoCom: "—" };
+      const anterior = s.valores[i - 1];
+      const pct = anterior !== 0 ? ((s.valores[i] - anterior) / Math.abs(anterior)) * 100 : (s.valores[i] > 0 ? 100 : 0);
+      return { rotulo: lab, valor: s.valores[i], pct, comparadoCom: `vs ${labels[i - 1]}` };
+    });
+  }, [tipo, series, labels, reservasComFinanceiro, metrica]);
+
+  const MODOS = [
+    ["anos-recentes", "Últimos 5 anos"], ["anos-selecionados", "Anos selecionados"],
+    ["ultimos-meses", "Últimos 12 meses"], ["meses-selecionados", "Qtd. de meses"],
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 960 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {MODOS.map(([v, l]) => (
+          <button key={v} onClick={() => setModo(v)} style={{ padding: "8px 14px", borderRadius: 10, fontSize: 13, fontWeight: 500, background: modo === v ? PALETA.teal : PALETA.surface, color: modo === v ? "#fff" : PALETA.slate, border: `1px solid ${modo === v ? PALETA.teal : PALETA.border}` }}>{l}</button>
+        ))}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4, borderRadius: 10, padding: 4, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+          <button onClick={() => setMetrica("recebido")} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 13, background: metrica === "recebido" ? PALETA.tealDark : "transparent", color: metrica === "recebido" ? "#fff" : PALETA.slate }}>Recebido</button>
+          <button onClick={() => setMetrica("previsto")} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 13, background: metrica === "previsto" ? PALETA.tealDark : "transparent", color: metrica === "previsto" ? "#fff" : PALETA.slate }}>Previsto</button>
+        </div>
+      </div>
+
+      {modo === "anos-selecionados" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {anosParaEscolher.map(y => (
+            <button key={y} onClick={() => toggleAno(y)} style={{ padding: "6px 12px", borderRadius: 999, fontSize: 13, fontWeight: 500, background: anosSelecionados.includes(y) ? PALETA.coral : PALETA.surface, color: anosSelecionados.includes(y) ? "#fff" : PALETA.slate, border: `1px solid ${anosSelecionados.includes(y) ? PALETA.coral : PALETA.border}` }}>{y}</button>
+          ))}
+        </div>
+      )}
+      {modo === "meses-selecionados" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Label>Quantidade de meses</Label>
+          <Input type="number" min={2} max={36} value={qtdMeses} onChange={e => setQtdMeses(e.target.value)} style={{ width: 100 }} />
+        </div>
+      )}
+
+      <div style={{ borderRadius: 16, padding: 16, background: PALETA.surface, border: `1px solid ${PALETA.border}`, height: 340 }}>
+        <canvas ref={canvasRef} />
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 8, color: PALETA.slate }}>
+          {tipo === "anos" ? "Variação em relação ao ano anterior" : "Variação mês a mês"}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px,1fr))", gap: 8 }}>
+          {variacoes.map((v, i) => (
+            <div key={i} style={{ borderRadius: 12, padding: 12, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontWeight: 700, fontSize: 14, color: v.cor || PALETA.ink }}>{v.rotulo}</span>
+                {v.pct !== null && (
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: v.pct >= 0 ? PALETA.greenBg : PALETA.redBg, color: v.pct >= 0 ? PALETA.green : PALETA.red }}>
+                    {v.pct >= 0 ? "▲" : "▼"} {Math.abs(v.pct).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{fmtBRL(v.valor)}</div>
+              <div style={{ fontSize: 11, color: PALETA.slate }}>{v.comparadoCom}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfigView({ config, onSalvar }) {
+  const [precos, setPrecos] = useState(config.precos);
+  const [piscina, setPiscina] = useState(config.piscina);
+  const [pulaPula, setPulaPula] = useState(config.pulaPula);
+  const [sinal, setSinal] = useState(config.sinal);
+  const [salvo, setSalvo] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  async function salvar() {
+    setSalvando(true);
+    const ok = await onSalvar({
+      precos: Object.fromEntries(Object.entries(precos).map(([k, v]) => [k, Number(v)])),
+      piscina: Number(piscina), pulaPula: Number(pulaPula), sinal: Number(sinal),
+    });
+    setSalvando(false);
+    if (ok) { setSalvo(true); setTimeout(() => setSalvo(false), 2000); }
+  }
+
+  return (
+    <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ borderRadius: 16, padding: 20, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+        <h3 className="font-display" style={{ fontWeight: 700, marginBottom: 4, color: PALETA.tealDark }}>Valores por dia da semana</h3>
+        <p style={{ fontSize: 12, marginBottom: 16, color: PALETA.slate }}>Usado para calcular automaticamente o valor da locação de acordo com a data escolhida.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 12 }}>
+          {WEEKDAY_KEYS.map(k => <div key={k}><Label>{WEEKDAY_LABELS[k]}</Label><Input type="number" value={precos[k]} onChange={e => setPrecos(p => ({ ...p, [k]: e.target.value }))} /></div>)}
+        </div>
+      </div>
+      <div style={{ borderRadius: 16, padding: 20, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+        <h3 className="font-display" style={{ fontWeight: 700, marginBottom: 16, color: PALETA.tealDark }}>Adicionais e sinal</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 12 }}>
+          <div><Label>Piscina</Label><Input type="number" value={piscina} onChange={e => setPiscina(e.target.value)} /></div>
+          <div><Label>Pula-pula</Label><Input type="number" value={pulaPula} onChange={e => setPulaPula(e.target.value)} /></div>
+          <div><Label>Valor do sinal</Label><Input type="number" value={sinal} onChange={e => setSinal(e.target.value)} /></div>
+        </div>
+        <p style={{ fontSize: 12, marginTop: 12, color: PALETA.slate }}>O valor do sinal alterado aqui vale para novas reservas — reservas já criadas mantêm o sinal cobrado na época.</p>
+      </div>
+      <button onClick={salvar} disabled={salvando} style={{ padding: 14, borderRadius: 14, fontWeight: 700, color: "#fff", background: PALETA.coral, opacity: salvando ? 0.6 : 1 }}>{salvo ? "Configurações salvas ✓" : salvando ? "Salvando..." : "Salvar configurações"}</button>
+
+      <AlterarSenhaCard />
+      <FeedbackCard />
+    </div>
+  );
+}
+
+function AlterarSenhaCard() {
+  const [aberto, setAberto] = useState(false);
+  const [passo, setPasso] = useState("senha-mae"); // senha-mae | nova-senha
+  const [senhaMae, setSenhaMae] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+  const [carregando, setCarregando] = useState(false);
+
+  function resetar() {
+    setAberto(false); setPasso("senha-mae"); setSenhaMae(""); setNovaSenha(""); setConfirmarSenha(""); setErro(""); setSucesso("");
+  }
+
+  async function confirmarSenhaMae() {
+    if (!senhaMae) return;
+    setCarregando(true); setErro("");
+    try {
+      const { data, error } = await sb.rpc("verificar_senha_mae", { senha: senhaMae });
+      if (error) throw error;
+      if (data === true) { setSucesso("Autorização confirmada."); setPasso("nova-senha"); }
+      else setErro("Senha mãe incorreta.");
+    } catch (e) { setErro("Erro ao verificar: " + e.message); }
+    finally { setCarregando(false); }
+  }
+
+  async function alterarSenha() {
+    if (!novaSenha || novaSenha.length < 4) { setErro("A nova senha precisa ter pelo menos 4 caracteres."); return; }
+    if (novaSenha !== confirmarSenha) { setErro("As senhas não coincidem."); return; }
+    setCarregando(true); setErro("");
+    try {
+      // a senha mãe é reconferida aqui de novo, no servidor, por segurança
+      const { data, error } = await sb.rpc("alterar_senha_filha", { senha_mae_atual: senhaMae, nova_senha_filha: novaSenha });
+      if (error) throw error;
+      if (data === true) { setSucesso("✅ Senha alterada com sucesso."); setPasso("concluido"); }
+      else setErro("❌ Senha mãe incorreta.");
+    } catch (e) { setErro("Erro ao alterar: " + e.message); }
+    finally { setCarregando(false); }
+  }
+
+  return (
+    <div style={{ borderRadius: 16, padding: 20, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+      <h3 className="font-display" style={{ fontWeight: 700, marginBottom: 4, color: PALETA.tealDark }}>🔐 Alterar senha</h3>
+      <p style={{ fontSize: 12, marginBottom: 12, color: PALETA.slate }}>A senha usada para entrar no painel (senha filha) só pode ser trocada com a senha mãe.</p>
+
+      {!aberto && <button onClick={() => setAberto(true)} style={{ padding: "10px 16px", borderRadius: 12, fontWeight: 600, fontSize: 13, color: PALETA.teal, background: PALETA.bg }}>Alterar senha</button>}
+
+      {aberto && passo === "senha-mae" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+          <Label>👑 Digite a senha mãe</Label>
+          <Input type="password" value={senhaMae} onChange={e => setSenhaMae(e.target.value)} onKeyDown={e => e.key === "Enter" && confirmarSenhaMae()} placeholder="Senha mãe" autoFocus />
+          {erro && <div style={{ fontSize: 12, color: PALETA.red }}>❌ {erro}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={resetar} style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, background: PALETA.bg, color: PALETA.slate }}>Cancelar</button>
+            <button onClick={confirmarSenhaMae} disabled={carregando || !senhaMae} style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "#fff", background: PALETA.violet, opacity: carregando || !senhaMae ? 0.5 : 1 }}>{carregando ? "Verificando..." : "Confirmar"}</button>
+          </div>
+        </div>
+      )}
+
+      {aberto && passo === "nova-senha" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+          <div style={{ fontSize: 12, color: PALETA.green }}>✅ {sucesso}</div>
+          <Label>🔑 Nova senha</Label>
+          <Input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Nova senha filha" autoFocus />
+          <Label>🔑 Confirmar nova senha</Label>
+          <Input type="password" value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && alterarSenha()} placeholder="Confirme a nova senha" />
+          {erro && <div style={{ fontSize: 12, color: PALETA.red }}>{erro}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={resetar} style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, background: PALETA.bg, color: PALETA.slate }}>Cancelar</button>
+            <button onClick={alterarSenha} disabled={carregando} style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600, color: "#fff", background: PALETA.coral, opacity: carregando ? 0.6 : 1 }}>{carregando ? "Salvando..." : "Alterar senha"}</button>
+          </div>
+        </div>
+      )}
+
+      {aberto && passo === "concluido" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+          <div style={{ fontSize: 13, color: PALETA.green, fontWeight: 600 }}>{sucesso}</div>
+          <p style={{ fontSize: 12, color: PALETA.slate }}>A nova senha já vale a partir do próximo acesso.</p>
+          <button onClick={resetar} style={{ padding: "10px 14px", borderRadius: 10, fontSize: 13, background: PALETA.bg, color: PALETA.slate, alignSelf: "flex-start" }}>Fechar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TIPOS_FEEDBACK = [
+  ["problema", "🐛 Problema técnico"], ["sugestao", "💡 Sugestão"], ["reclamacao", "📝 Reclamação"],
+  ["avaliacao", "⭐ Avaliação"], ["assistencia", "❓ Assistência"], ["comentario", "💬 Comentário"],
+];
+const CONTATO = {
+  email: "guilhermeperelli21022009@gmail.com",
+  whatsapp: "+55 21 98576-0642",
+  instagram: "@gw.tesla_hd",
+};
+
+function FeedbackCard() {
+  const [tipo, setTipo] = useState("sugestao");
+  const [assunto, setAssunto] = useState("");
+  const [mensagem, setMensagem] = useState("");
+  const [estrelas, setEstrelas] = useState(0);
+  const [anexo, setAnexo] = useState(null); // { nome, base64 }
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [enviado, setEnviado] = useState(false);
+
+  function onArquivo(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) { setAnexo(null); return; }
+    if (file.size > 3 * 1024 * 1024) { setErro("A imagem precisa ter até 3 MB."); return; }
+    setErro("");
+    const reader = new FileReader();
+    reader.onload = () => setAnexo({ nome: file.name, base64: reader.result });
+    reader.readAsDataURL(file);
+  }
+
+  async function enviar() {
+    if (!assunto.trim()) { setErro("Informe um assunto."); return; }
+    setEnviando(true); setErro("");
+    try {
+      const { error } = await sb.from("feedback").insert({
+        tipo, assunto: assunto.trim(), mensagem: mensagem.trim(),
+        avaliacao_estrelas: tipo === "avaliacao" ? estrelas : null,
+        anexo_base64: anexo ? anexo.base64 : null, anexo_nome: anexo ? anexo.nome : null,
+      });
+      if (error) throw error;
+
+      const agora = new Date();
+      const linhas = [
+        `Tipo: ${TIPOS_FEEDBACK.find(t => t[0] === tipo)[1]}`,
+        `Data: ${agora.toLocaleDateString("pt-BR")}`,
+        `Horário: ${agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
+        `Assunto: ${assunto}`,
+        "",
+        `Mensagem:`, mensagem || "(sem mensagem)",
+      ];
+      if (tipo === "avaliacao") linhas.push("", `Avaliação: ${"⭐".repeat(estrelas) || "(sem nota)"}`);
+      if (anexo) linhas.push("", `Anexo: ${anexo.nome} (já salvo no sistema, envie manualmente se quiser incluir aqui)`);
+
+      const mailto = `mailto:${CONTATO.email}?subject=${encodeURIComponent("[ESPAÇO & LAZER — NOVO FEEDBACK] " + assunto)}&body=${encodeURIComponent(linhas.join("\n"))}`;
+      window.location.href = mailto;
+
+      setEnviado(true);
+      setAssunto(""); setMensagem(""); setEstrelas(0); setAnexo(null);
+      setTimeout(() => setEnviado(false), 4000);
+    } catch (e) { setErro("Erro ao enviar: " + e.message); }
+    finally { setEnviando(false); }
+  }
+
+  return (
+    <div style={{ borderRadius: 16, padding: 20, background: PALETA.surface, border: `1px solid ${PALETA.border}` }}>
+      <h3 className="font-display" style={{ fontWeight: 700, marginBottom: 4, color: PALETA.tealDark }}>💬 Feedback e Suporte</h3>
+      <p style={{ fontSize: 12, marginBottom: 16, color: PALETA.slate }}>Relate problemas, sugira funções novas, avalie o sistema ou peça ajuda.</p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <Label>Tipo</Label>
+          <select value={tipo} onChange={e => setTipo(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: 12, fontSize: 14, border: `1px solid ${PALETA.border}` }}>
+            {TIPOS_FEEDBACK.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div><Label>Assunto</Label><Input value={assunto} onChange={e => setAssunto(e.target.value)} placeholder="Resuma em poucas palavras" /></div>
+        <div><Label>Mensagem</Label><textarea value={mensagem} onChange={e => setMensagem(e.target.value)} rows={4} style={{ width: "100%", padding: "10px 12px", borderRadius: 12, fontSize: 14, border: `1px solid ${PALETA.border}` }} placeholder="Explique com detalhes..." /></div>
+
+        {tipo === "avaliacao" && (
+          <div>
+            <Label>Avaliação</Label>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} type="button" onClick={() => setEstrelas(n)} style={{ fontSize: 24, background: "none", opacity: n <= estrelas ? 1 : 0.3 }}>⭐</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <Label>Anexar imagem (opcional)</Label>
+          <input type="file" accept="image/*" onChange={onArquivo} style={{ fontSize: 13 }} />
+          {anexo && <div style={{ fontSize: 12, marginTop: 4, color: PALETA.slate }}>{anexo.nome}</div>}
+        </div>
+
+        {erro && <div style={{ fontSize: 13, padding: "8px 12px", borderRadius: 10, background: PALETA.redBg, color: PALETA.red }}>{erro}</div>}
+        {enviado && <div style={{ fontSize: 13, padding: "8px 12px", borderRadius: 10, background: PALETA.greenBg, color: PALETA.green }}>✅ Solicitação salva! Se abriu seu app de e-mail, é só clicar em enviar pra avisar direto.</div>}
+
+        <button onClick={enviar} disabled={enviando} style={{ padding: 12, borderRadius: 12, fontWeight: 700, color: "#fff", background: PALETA.tealDark, opacity: enviando ? 0.6 : 1 }}>{enviando ? "Enviando..." : "📨 Enviar solicitação"}</button>
+
+        <div style={{ fontSize: 12, color: PALETA.slate, borderTop: `1px solid ${PALETA.border}`, paddingTop: 10, marginTop: 4 }}>
+          Outros contatos: WhatsApp {CONTATO.whatsapp} · Instagram {CONTATO.instagram}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+document.getElementById("root").dataset.appRendered = "true";
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
